@@ -1,6 +1,6 @@
 SYSCONF_LINK = g++
-CPPFLAGS     = -Wall -Wextra -Weffc++ -pedantic -std=c++98
-LDFLAGS      = -Wall -O3
+CPPFLAGS     = -g -Wall -Wextra -Weffc++ -pedantic -std=c++98
+LDFLAGS      = -g -Wall -O3
 LIBS         = -lm
 
 SRCDIR = ./src/

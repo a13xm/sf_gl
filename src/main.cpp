@@ -5,6 +5,9 @@
 #include "model.h"
 #include "geometry.h"
 #include <iostream>
+#include <execinfo.h>
+#include <signal.h>
+#include <unistd.h>
 
 const TGAColor white = TGAColor(255, 255, 255, 255);
 const TGAColor red   = TGAColor(255, 0,   0,   255);
@@ -13,18 +16,16 @@ const TGAColor blue  = TGAColor(  0,   0, 255, 255);
 
 const int width  = 800;
 const int height = 800;
+const int depth = 255;
 
 void line(Vec2i t0, Vec2i t1, TGAImage &image, TGAColor color) {
-    bool steep = false;
-    if (std::abs(t0.x-t1.x)<std::abs(t0.y - t1.y)) {
+    bool steep = std::abs(t0.x-t1.x)<std::abs(t0.y - t1.y);
+    if (steep) {
         std::swap(t0.x, t0.y);
         std::swap(t1.x, t1.y);
-        steep = true;
     }
-    if (t0.x > t1.x) {
-        std::swap(t0.x, t1.x);
-        std::swap(t0.y, t1.y);
-    }
+    
+    if (t0.x > t1.x) std::swap(t0, t1);
     int dx = t1.x-t0.x;
     int dy = t1.y-t0.y;
     int derror2 = std::abs(dy) * 2;
@@ -45,65 +46,118 @@ void line(Vec2i t0, Vec2i t1, TGAImage &image, TGAColor color) {
     }
 }
 
-void triangle(Vec2i t0, Vec2i t1, Vec2i t2, TGAImage &image, TGAColor color) {
-    if (t0.y==t1.y && t0.y==t2.y) return;
-    if (t0.y > t1.y) std::swap(t0, t1);
-    if (t0.y > t2.y) std::swap(t0, t2);
-    if (t1.y > t2.y) std::swap(t1, t2);
+template <typename T>
+T min_3(T a, T b, T c) {
+    return std::min(std::min(a, b), c);
+}
 
-    int height_r2 = t2.y - t0.y;
-    int width_r2 = t2.x - t0.x;
-    for (int y = t0.y; y <= t2.y; y++) {
-        float r2_curr_part = (float)(y - t0.y)/height_r2;
-        int x2 = t0.x + width_r2*r2_curr_part;
-        int x1, height_r1, width_r1;
+template <typename T>
+T max_3(T a, T b, T c) {
+    return std::max(std::max(a, b), c);
+}
 
-        if (y <= t1.y) {
-            height_r1 = t1.y - t0.y;
-            width_r1 = t1.x - t0.x;
-            float r1_curr_part = height_r1 == 0 ? 0 : (float)(y - t0.y)/height_r1;
-            x1 = t0.x + width_r1*r1_curr_part;
-        } else {
-            height_r1 = t2.y - t1.y;
-            width_r1 = t2.x - t1.x;
-            float r1_curr_part = height_r1 == 0 ? 0 : (float)(y - t1.y)/height_r1;
-            x1 = t1.x + width_r1*r1_curr_part;
-        }
+int orientation_2d(Vec3i& a, Vec3i& b, Vec3i& c) {
+    return (b.x - a.x)*(c.y - a.y) - (b.y - a.y)*(c.x - a.x);
+}
 
-        if (x1 > x2) std::swap(x1, x2);
-        for (int x = x1; x <= x2; x++) {
-            image.set(x, y, color);
+float triangle_area(Vec3i a, Vec3i b, Vec3i c) {
+    return std::abs(0.5f * (a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y)));
+}
+
+void triangle_aabb(Vec3i vertex0, Vec3i vertex1, Vec3i vertex2, TGAImage &image, TGAColor color, int *z_buffer) {
+
+    if (orientation_2d(vertex0, vertex1, vertex2) < 0) {
+        std::swap(vertex1, vertex2);
+    }
+
+    int x_min = min_3(vertex0.x, vertex1.x, vertex2.x);
+    int y_min = min_3(vertex0.y, vertex1.y, vertex2.y);
+    int x_max = max_3(vertex0.x, vertex1.x, vertex2.x);
+    int y_max = max_3(vertex0.y, vertex1.y, vertex2.y); 
+
+    float total_area_inv = 1.0f/triangle_area(vertex0, vertex1, vertex2);
+
+    Vec3i cur_point;
+    for (cur_point.y = y_min; cur_point.y <= y_max; cur_point.y++) {
+        for (cur_point.x = x_min; cur_point.x <= x_max; cur_point.x++) {
+            int w0 = orientation_2d(vertex0, vertex1, cur_point);
+            int w1 = orientation_2d(vertex1, vertex2, cur_point);
+            int w2 = orientation_2d(vertex2, vertex0, cur_point);
+            
+            if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
+                float area_0_1 = triangle_area(vertex0, vertex1, cur_point);
+                float area_0_2 = triangle_area(vertex0, vertex2, cur_point);
+
+                float b2 = area_0_1 * total_area_inv;
+                float b1 = area_0_2 * total_area_inv;
+                float b0 = 1.0f - b1 - b2;
+
+                float z = vertex0.z + b1*(vertex1.z - vertex0.z) + b2*(vertex2.z - vertex0.z);
+                int zb_idx = cur_point.y*width + cur_point.x;
+                if (z > z_buffer[zb_idx]) {
+                    z_buffer[zb_idx] = z;
+                    image.set(cur_point.x, cur_point.y, color);
+                }
+            }
         }
     }
 }
 
 
-int main() {
+void draw_z_buffer(int *z_buffer, TGAImage &z_image) {
+    for (int y=0; y<height; y++) {
+        for (int x=0; x<width; x++) {
+            z_image.set(x, y, TGAColor(z_buffer[y*width + x], 1));
+        }
+    }
+}
+
+void render_model(TGAImage &image, TGAImage &z_image) {
     Model *model = new Model("obj/african_head.obj");
-    TGAImage image(width, height, TGAImage::RGB);
+
+    int *z_buffer = new int[(width + 1) * (height + 1)]; // +1 while have no fill rule
+    for (int x = 0; x<(width + 1) * (height + 1); x++) {
+    // int *z_buffer = new int[width * height];
+    // for (int x = 0; x<width * height; x++) {
+        z_buffer[x] = std::numeric_limits<int>::min();
+    }
+
 
     Vec3f light_dir(0,0,-1);
     for (int i=0; i < model->nfaces(); i++) {
         std::vector<int> edges = model->face(i);
-        Vec2i frame_coords[3];
+        Vec3i frame_coords[3];
         Vec3f model_coords[3];
         for (int j=0; j<3; j++) {
             Vec3f vertice = model->vert(edges[j]);
             model_coords[j] = vertice;
-            frame_coords[j] = Vec2i((vertice.x + 1.)*width/2., (vertice.y + 1.)*height/2.);
+            frame_coords[j] = Vec3i((vertice.x + 1.)*width/2., (vertice.y + 1.)*height/2., (vertice.z + 1.)*depth/2.);
         }
 
         Vec3f edge_vect1 = model_coords[1] - model_coords[0];
         Vec3f edge_vect2 = model_coords[2] - model_coords[0];
         Vec3f triangle_normal = (edge_vect2 ^ edge_vect1).normalize();
         float intensity = triangle_normal * light_dir;
+
         if (intensity > 0) {
-            triangle(frame_coords[0], frame_coords[1], frame_coords[2], image, TGAColor(255*intensity, 255*intensity, 255*intensity, 255));
+            TGAColor color = TGAColor(255*intensity, 255*intensity, 255*intensity, 255);
+            triangle_aabb(frame_coords[0], frame_coords[1], frame_coords[2], image, color, z_buffer);
         }
     }
 
     delete model;
-    image.flip_vertically(); // i want to have the origin at the left bottom corner of the image
+    draw_z_buffer(z_buffer, z_image);
+}
+
+int main() {
+    TGAImage image(width, height, TGAImage::RGB);
+    TGAImage z_image(width, height, TGAImage::GRAYSCALE);
+    render_model(image, z_image);
+
+    image.flip_vertically();
     image.write_tga_file("out/output.tga");
+
+    z_image.flip_vertically();
+    z_image.write_tga_file("out/z_output.tga");
     return 0;
 }
