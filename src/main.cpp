@@ -11,7 +11,7 @@
 
 const TGAColor white = TGAColor(255, 255, 255, 255);
 const TGAColor red   = TGAColor(255, 0,   0,   255);
-const TGAColor green = TGAColor(  0, 255,   0,   0);
+const TGAColor green = TGAColor(  0, 255,   0, 255);
 const TGAColor blue  = TGAColor(  0,   0, 255, 255);
 
 const int width  = 800;
@@ -64,35 +64,49 @@ float triangle_area(Vec3i a, Vec3i b, Vec3i c) {
     return std::abs(0.5f * (a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y)));
 }
 
-void triangle_aabb(Vec3i vertex0, Vec3i vertex1, Vec3i vertex2, TGAImage &image, TGAColor color, int *z_buffer) {
+bool is_top_left_edge(Vec3i va, Vec3i vb, Vec3i vc) { // test that va - vb is top or left edge
+    return va.y > vb.y || (va.y == vb.y && va.y > vc.y);
+}
 
-    if (orientation_2d(vertex0, vertex1, vertex2) < 0) {
-        std::swap(vertex1, vertex2);
+void triangle_aabb(
+    Vec3i v0, Vec3i v1, Vec3i v2, 
+    // Vec2i uv0, Vec2i uv2, Vec2i uv2,
+    TGAImage &image, TGAColor color, int *z_buffer) {
+
+    if (orientation_2d(v0, v1, v2) < 0) {
+        std::swap(v1, v2);
+        // std::swap(uv1, uv2);
     }
 
-    int x_min = min_3(vertex0.x, vertex1.x, vertex2.x);
-    int y_min = min_3(vertex0.y, vertex1.y, vertex2.y);
-    int x_max = max_3(vertex0.x, vertex1.x, vertex2.x);
-    int y_max = max_3(vertex0.y, vertex1.y, vertex2.y); 
+    int x_min = min_3(v0.x, v1.x, v2.x);
+    int y_min = min_3(v0.y, v1.y, v2.y);
+    int x_max = max_3(v0.x, v1.x, v2.x);
+    int y_max = max_3(v0.y, v1.y, v2.y);
 
-    float total_area_inv = 1.0f/triangle_area(vertex0, vertex1, vertex2);
+    float total_area_inv = 1.0f/triangle_area(v0, v1, v2);
+
+    int bias0 = is_top_left_edge(v1, v2, v0) ? 0 : -1;
+    int bias1 = is_top_left_edge(v2, v0, v1) ? 0 : -1;
+    int bias2 = is_top_left_edge(v0, v1, v2) ? 0 : -1;
 
     Vec3i cur_point;
     for (cur_point.y = y_min; cur_point.y <= y_max; cur_point.y++) {
         for (cur_point.x = x_min; cur_point.x <= x_max; cur_point.x++) {
-            int w0 = orientation_2d(vertex0, vertex1, cur_point);
-            int w1 = orientation_2d(vertex1, vertex2, cur_point);
-            int w2 = orientation_2d(vertex2, vertex0, cur_point);
-            
+            int w0 = orientation_2d(v1, v2, cur_point) + bias0;
+            int w1 = orientation_2d(v2, v0, cur_point) + bias1;
+            int w2 = orientation_2d(v0, v1, cur_point) + bias2;
+
             if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
-                float area_0_1 = triangle_area(vertex0, vertex1, cur_point);
-                float area_0_2 = triangle_area(vertex0, vertex2, cur_point);
+                float area_0_1 = triangle_area(v0, v1, cur_point);
+                float area_0_2 = triangle_area(v0, v2, cur_point);
 
                 float b2 = area_0_1 * total_area_inv;
                 float b1 = area_0_2 * total_area_inv;
                 float b0 = 1.0f - b1 - b2;
 
-                float z = vertex0.z + b1*(vertex1.z - vertex0.z) + b2*(vertex2.z - vertex0.z);
+                float z = v0.z + b1*(v1.z - v0.z) + b2*(v2.z - v0.z);
+                // float u = uv0.u + b1*(uv1.u - uv0.u) + b2*(uv2.u - uv0.u);
+                // float v = uv0.v + b1*(uv1.v - uv0.v) + b2*(uv2.v - uv0.v);
                 int zb_idx = cur_point.y*width + cur_point.x;
                 if (z > z_buffer[zb_idx]) {
                     z_buffer[zb_idx] = z;
@@ -115,10 +129,8 @@ void draw_z_buffer(int *z_buffer, TGAImage &z_image) {
 void render_model(TGAImage &image, TGAImage &z_image) {
     Model *model = new Model("obj/african_head.obj");
 
-    int *z_buffer = new int[(width + 1) * (height + 1)]; // +1 while have no fill rule
-    for (int x = 0; x<(width + 1) * (height + 1); x++) {
-    // int *z_buffer = new int[width * height];
-    // for (int x = 0; x<width * height; x++) {
+    int *z_buffer = new int[width * height];
+    for (int x = 0; x<width * height; x++) {
         z_buffer[x] = std::numeric_limits<int>::min();
     }
 
@@ -154,10 +166,10 @@ int main() {
     TGAImage z_image(width, height, TGAImage::GRAYSCALE);
     render_model(image, z_image);
 
-    image.flip_vertically();
+    image.flip_vertically(); // computed as lower-left
     image.write_tga_file("out/output.tga");
 
-    z_image.flip_vertically();
+    z_image.flip_vertically(); // computed as lower-left
     z_image.write_tga_file("out/z_output.tga");
     return 0;
 }
