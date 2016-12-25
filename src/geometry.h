@@ -4,7 +4,11 @@
 #include <cmath>
 
 template <class t> struct Vec2 {
-    t x, y;
+    union {
+        struct {t u, v;};
+        struct {t x, y;};
+        t raw[2];
+    };
     Vec2<t>() : x(t()), y(t()) {}
     Vec2<t>(t _x, t _y) : x(_x), y(_y) {}
     Vec2<t>(const Vec2<t> &v) : x(t()), y(t()) { *this = v; }

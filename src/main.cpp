@@ -14,11 +14,11 @@ const TGAColor red   = TGAColor(255, 0,   0,   255);
 const TGAColor green = TGAColor(  0, 255,   0, 255);
 const TGAColor blue  = TGAColor(  0,   0, 255, 255);
 
-const int width  = 800;
-const int height = 800;
+const int width  = 1024;
+const int height = 1024;
 const int depth = 255;
 
-void line(Vec2i t0, Vec2i t1, TGAImage &image, TGAColor color) {
+void line(Vec3i t0, Vec3i t1, TGAImage &image, TGAColor color) {
     bool steep = std::abs(t0.x-t1.x)<std::abs(t0.y - t1.y);
     if (steep) {
         std::swap(t0.x, t0.y);
@@ -70,12 +70,12 @@ bool is_top_left_edge(Vec3i va, Vec3i vb, Vec3i vc) { // test that va - vb is to
 
 void triangle_aabb(
     Vec3i v0, Vec3i v1, Vec3i v2, 
-    // Vec2i uv0, Vec2i uv2, Vec2i uv2,
-    TGAImage &image, TGAColor color, int *z_buffer) {
+    Vec2i uv0, Vec2i uv1, Vec2i uv2,
+    TGAImage &image, Model *model, float intensity, int *z_buffer) {
 
     if (orientation_2d(v0, v1, v2) < 0) {
         std::swap(v1, v2);
-        // std::swap(uv1, uv2);
+        std::swap(uv1, uv2);
     }
 
     int x_min = min_3(v0.x, v1.x, v2.x);
@@ -92,9 +92,9 @@ void triangle_aabb(
     Vec3i cur_point;
     for (cur_point.y = y_min; cur_point.y <= y_max; cur_point.y++) {
         for (cur_point.x = x_min; cur_point.x <= x_max; cur_point.x++) {
-            int w0 = orientation_2d(v1, v2, cur_point) + bias0;
-            int w1 = orientation_2d(v2, v0, cur_point) + bias1;
-            int w2 = orientation_2d(v0, v1, cur_point) + bias2;
+            int w0 = orientation_2d(v1, v2, cur_point) + bias0; // left-top rasterization rule
+            int w1 = orientation_2d(v2, v0, cur_point) + bias1; // left-top rasterization rule
+            int w2 = orientation_2d(v0, v1, cur_point) + bias2; // left-top rasterization rule
 
             if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
                 float area_0_1 = triangle_area(v0, v1, cur_point);
@@ -105,12 +105,13 @@ void triangle_aabb(
                 float b0 = 1.0f - b1 - b2;
 
                 float z = v0.z + b1*(v1.z - v0.z) + b2*(v2.z - v0.z);
-                // float u = uv0.u + b1*(uv1.u - uv0.u) + b2*(uv2.u - uv0.u);
-                // float v = uv0.v + b1*(uv1.v - uv0.v) + b2*(uv2.v - uv0.v);
+                int u = uv0.u + b1*(uv1.u - uv0.u) + b2*(uv2.u - uv0.u);
+                int v = uv0.v + b1*(uv1.v - uv0.v) + b2*(uv2.v - uv0.v);
                 int zb_idx = cur_point.y*width + cur_point.x;
                 if (z > z_buffer[zb_idx]) {
                     z_buffer[zb_idx] = z;
-                    image.set(cur_point.x, cur_point.y, color);
+                    TGAColor color = model->get_texture_color(u, v);
+                    image.set(cur_point.x, cur_point.y, TGAColor(color.r*intensity, color.g*intensity, color.b*intensity, 255));
                 }
             }
         }
@@ -128,22 +129,24 @@ void draw_z_buffer(int *z_buffer, TGAImage &z_image) {
 
 void render_model(TGAImage &image, TGAImage &z_image) {
     Model *model = new Model("obj/african_head.obj");
+    model->load_texture("obj/african_head_diffuse.tga");
 
     int *z_buffer = new int[width * height];
     for (int x = 0; x<width * height; x++) {
         z_buffer[x] = std::numeric_limits<int>::min();
     }
 
-
     Vec3f light_dir(0,0,-1);
     for (int i=0; i < model->nfaces(); i++) {
-        std::vector<int> edges = model->face(i);
-        Vec3i frame_coords[3];
+        ModelFace mf = model->face(i);
         Vec3f model_coords[3];
+        Vec3i frame_coords[3];
+        Vec2i uv_coords[3];
         for (int j=0; j<3; j++) {
-            Vec3f vertice = model->vert(edges[j]);
+            Vec3f vertice = model->vert(mf.m_verts[j].v_idx);
             model_coords[j] = vertice;
             frame_coords[j] = Vec3i((vertice.x + 1.)*width/2., (vertice.y + 1.)*height/2., (vertice.z + 1.)*depth/2.);
+            uv_coords[j] = model->uv(mf.m_verts[j].vt_idx);
         }
 
         Vec3f edge_vect1 = model_coords[1] - model_coords[0];
@@ -152,13 +155,15 @@ void render_model(TGAImage &image, TGAImage &z_image) {
         float intensity = triangle_normal * light_dir;
 
         if (intensity > 0) {
-            TGAColor color = TGAColor(255*intensity, 255*intensity, 255*intensity, 255);
-            triangle_aabb(frame_coords[0], frame_coords[1], frame_coords[2], image, color, z_buffer);
+            triangle_aabb(frame_coords[0], frame_coords[1], frame_coords[2],
+                uv_coords[0], uv_coords[1], uv_coords[2],
+                image, model, intensity, z_buffer);
         }
     }
 
     delete model;
     draw_z_buffer(z_buffer, z_image);
+    delete [] z_buffer;
 }
 
 int main() {
