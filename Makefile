@@ -8,18 +8,21 @@ DESTDIR = ./bin/
 OBJDIR = ./bin/
 OUTDIR = ./out/
 TARGET = main
+INCDIR = ./src/
 
-OBJECTS := $(patsubst $(SRCDIR)%.cpp, $(OBJDIR)%.o, $(wildcard $(SRCDIR)*.cpp))
+OBJECTS := $(patsubst $(SRCDIR)%.cpp, $(OBJDIR)%.o, $(wildcard $(SRCDIR)**/*.cpp $wildcard $(SRCDIR)*.cpp))
 
-all: $(DESTDIR)$(TARGET)
+
+.PHONY all: $(DESTDIR)$(TARGET)
 
 $(DESTDIR)$(TARGET): $(OBJECTS)
 	$(SYSCONF_LINK) $(LDFLAGS) -o $(DESTDIR)$(TARGET) $(OBJECTS) $(LIBS)
  
 $(OBJECTS): $(DESTDIR)%.o: $(SRCDIR)%.cpp
-	$(SYSCONF_LINK) $(CPPFLAGS) -c $(CFLAGS) $< -o $@
+	@mkdir -p $(@D)
+	$(SYSCONF_LINK) $(CPPFLAGS) -I$(INCDIR) -c$(CFLAGS) $< -o $@
 
-clean:
+.PHONY clean:
 	-rm -f $(OBJECTS)
 	-rm -f $(DESTDIR)$(TARGET)
 	-rm -f $(OUTDIR)*

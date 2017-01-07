@@ -90,4 +90,5 @@ inline bool is_top_left_edge(Vec3i va, Vec3i vb, Vec3i vc) { // test that va - v
     return va.y > vb.y || (va.y == vb.y && va.y > vc.y);
 }
 
+
 #endif //__GEOMETRY_H__

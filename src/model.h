@@ -4,7 +4,7 @@
 #include <iostream>
 #include <sstream>
 #include <vector>
-#include "geometry.h"
+#include "geom/geometry.h"
 #include "tgaimage.h"
 
 

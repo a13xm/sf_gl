@@ -1,6 +1,6 @@
 #include "tgaimage.h"
 #include "model.h"
-#include "geometry.h"
+#include "geom/geometry.h"
 
 #include "rasterizer.h"
 
