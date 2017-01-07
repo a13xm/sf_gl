@@ -1,5 +1,5 @@
-SYSCONF_LINK = g++
-CPPFLAGS     = -g -Wall -Wextra -Weffc++ -pedantic -std=c++98
+SYSCONF_LINK = clang++
+CPPFLAGS     = -g -Wall -Wextra -Weffc++ -Wno-gnu-anonymous-struct -Wno-nested-anon-types -pedantic -std=c++11
 LDFLAGS      = -g -Wall -O3
 LIBS         = -lm
 
