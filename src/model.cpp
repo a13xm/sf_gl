@@ -3,8 +3,10 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
-#include "model.h"
+#include "geom/vector.h"
+#include "tgaimage.h"
 
+#include "model.h"
 
 std::ostream& operator<<(std::ostream &out_s, const ModelFace &mf) {
     for (int i=0;i<3;i++) {
