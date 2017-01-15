@@ -17,21 +17,15 @@ const TGAColor red   = TGAColor(255, 0,   0,   255);
 const TGAColor green = TGAColor(  0, 255,   0, 255);
 const TGAColor blue  = TGAColor(  0,   0, 255, 255);
 
-const int width  = 1024;
-const int height = 1024;
-const int depth = 255;
-
 Matrix trans_sum;
+int width = 1024; int height = 1024;
+float depth = 255;
 
-void render_model(TGAImage &image, TGAImage &z_image) {
+void render_model() {
     Model *model = new Model("obj/african_head.obj");
     model->load_texture("obj/african_head_diffuse.tga");
-    Rasterizer rast;
-
-    int *z_buffer = new int[width * height];
-    for (int x = 0; x<width * height; x++) {
-        z_buffer[x] = std::numeric_limits<int>::min();
-    }
+    Rasterizer *rast = new Rasterizer();
+    rast->init_frame(width, height, 0, depth);
 
     Vec3f light_dir(0,0,-1);
     for (int i=0; i < model->nfaces(); i++) {
@@ -52,29 +46,30 @@ void render_model(TGAImage &image, TGAImage &z_image) {
         float intensity = triangle_normal * light_dir;
 
         if (intensity > 0) {
-            rast.triangle_aabb(frame_coords[0], frame_coords[1], frame_coords[2],
-                uv_coords[0], uv_coords[1], uv_coords[2],
-                image, model, intensity, z_buffer);
+            rast->triangle_aabb(frame_coords, uv_coords, model, intensity);
         }
     }
+    rast->draw_z_buffer();
+    TGAImage *image = rast->frame_image();
+    image->flip_vertically(); // computed as lower-left
+    image->write_tga_file("out/output.tga");
+    image = NULL;
+
+    TGAImage *z_image = rast->z_buffer_image();
+    z_image->flip_vertically(); // computed as lower-left
+    z_image->write_tga_file("out/z_output.tga");
+    z_image = NULL;
+
+    delete rast;
+    rast = NULL;
 
     delete model;
-    rast.draw_z_buffer(z_buffer, z_image);
-    delete [] z_buffer;
+    model = NULL;
 }
 
 int main() {
-    TGAImage image(width, height, TGAImage::RGB);
-    TGAImage z_image(width, height, TGAImage::GRAYSCALE);
-
-    Matrix mv = transformations::viewport_matrix(0, 0, width, height, 0, 255);
+    Matrix mv = transformations::viewport_matrix(0, 0, width, height, 0, depth);
     trans_sum = mv * transformations::projection_matrix() * transformations::view_matrix() * transformations::model_matrix();
-    render_model(image, z_image);
-
-    image.flip_vertically(); // computed as lower-left
-    image.write_tga_file("out/output.tga");
-
-    z_image.flip_vertically(); // computed as lower-left
-    z_image.write_tga_file("out/z_output.tga");
+    render_model();
     return 0;
 }

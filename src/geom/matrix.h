@@ -7,6 +7,7 @@ template <class t> struct Vec3;
 typedef Vec3<float> Vec3f;
 
 class Matrix {
+private:
     std::vector<std::vector<float> > m;
     int rows, cols;
 public:
